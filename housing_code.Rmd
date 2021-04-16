@@ -1,0 +1,224 @@
+---
+title: "Hedonic Housing Pricing Model"
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  word_document: default
+  pdf_document: default
+---
+```{r}
+chooseCRANmirror(graphics=FALSE, ind=62)
+if (!require("rsample")) install.packages("rsample") 
+if (!require("dplyr")) install.packages("dplyr") 
+if (!require("rpart")) install.packages("rpart") 
+if (!require("rpart.plot")) install.packages("rpart.plot") 
+if (!require("ipred")) install.packages("ipred") 
+if (!require("randomForest")) install.packages("randomForest")
+if (!require("ranger")) install.packages("ranger") 
+if (!require("caret")) install.packages("caret") 
+if (!require("e1071")) install.packages("e1071") 
+if (!require("MASS")) install.packages("MASS") 
+if (!require("neuralnet")) install.packages("neuralnet") # NN package
+if(!require("quantreg"))install.packages("quantreg")
+library(neuralnet) # functions: neuralnet
+
+
+library(pacman)
+library(rsample)      # data splitting, functions: initial_split 
+library(dplyr)        # data wrangling
+library(rpart)        # performing regression trees
+library(rpart.plot)   # plotting regression trees
+library(ipred)        # bagging
+library(randomForest) # basic implementation
+library(ranger)       # a faster implementation of randomForest
+library(caret)        # an aggregator package for performing many machine learning models
+library(e1071)
+chooseCRANmirror(graphics=FALSE, ind=20)
+if (!require("stargazer")) install.packages("stargazer") # regression LaTeX table output
+library(stargazer) # functions: stargazer
+
+pacman::p_load(pacman, dplyr, GGally, ggplot2, ggthemes, 
+  ggvis, httr, lubridate, plotly, rio, rmarkdown, shiny, 
+  stringr, tidyr) 
+
+
+```
+```{r}
+source("data directory path.R")
+house <- read.csv(file="train.csv", header=TRUE, sep=",", na = ".")
+house <- na.omit(house)
+attach(house)
+summary(house)
+str(house)
+
+zoning<- as.factor(MSZoning) # zoning
+paved<- as.factor(Street)
+alley<- as.factor(Alley)
+flatness <- as.factor(LandContour) #flatness of the property
+utility<- as.factor(Utilities)
+lotconfig<- as.factor(LotConfig)#inside lot/corner lot...
+landslope <- as.factor(LandSlope)
+neighbourhood <- as.factor(Neighborhood)
+condition1<- as.factor(Condition1)
+condition2<- as.factor(Condition2)
+building_type<- as.factor(BldgType)
+housestyle<- as.factor(HouseStyle)
+overallquality<- as.factor(OverallQual)
+overallcond<- as.factor(OverallCond)
+roofstyle<- as.factor(RoofStyle)
+roofmaterial <- as.factor(RoofMatl)
+exterior_covering<- as.factor(Exterior1st)
+exterior_covering_more <- as.factor(Exterior2nd)
+masonry_veneer <- as.factor(MasVnrType)
+exterior_quality <-as.factor(ExterQual)
+exteriorcondition <- as.factor(ExterCond)
+foundation <- as.factor(Foundation)
+basement_height <- as.factor(BsmtQual)
+basement_condition <- as.factor(BsmtCond)
+basement_exposure <- as.factor(BsmtExposure)
+basement_rating <- as.factor(BsmtFinType1)
+basement_rating_more <- as.factor(BsmtFinType2)
+heating <- as.factor(Heating)
+heating_quality <- as.factor(HeatingQC)
+centralair<- as.factor(CentralAir)
+electrical <- as.factor(Electrical)
+kitchen_quality <- as.factor(KitchenQual)
+functional<- as.factor(Functional)
+fireplace<- as.factor(FireplaceQu)
+garatype<- as.factor(GarageType)
+garage_interior_finish <-as.factor(GarageFinish)
+garage_quality <- as.factor(GarageQual)
+garage_condition <- as.factor(GarageCond)
+paved_drieway <- as.factor(PavedDrive)
+pool_quality <- as.factor(PoolQC)
+fence_quality <- as.factor(Fence)
+miscellaneous <- as.factor(MiscFeature)
+saletype <- as.factor(MiscVal)
+salecondition<- as.factor(SaleCondition)
+MasVnrArea <- as.numeric(MasVnrArea )
+GarageYrBlt <- as.numeric(GarageYrBlt )
+LotFrontage <- as.numeric(LotFrontage)
+
+
+df <- data.frame(Id, MSSubClass, zoning,paved,alley,flatness,utility,lotconfig,landslope,neighbourhood,condition1,condition2,building_type,housestyle,overallquality,overallcond,roofstyle,roofmaterial,exterior_covering,exterior_covering_more,masonry_veneer,exterior_quality,exteriorcondition,foundation,basement_height,basement_condition,basement_exposure,basement_rating,basement_rating_more,heating,heating_quality,centralair,electrical,kitchen_quality,functional,fireplace,garatype,garage_interior_finish,garage_quality,garage_condition,paved_drieway,pool_quality,fence_quality,miscellaneous,saletype,salecondition,LotFrontage,LotArea, YearBuilt,YearRemodAdd,MasVnrArea, BsmtFinSF1,BsmtFinSF2,BsmtUnfSF, TotalBsmtSF, X1stFlrSF, X2ndFlrSF,LowQualFinSF,GrLivArea,BsmtFullBath,BsmtHalfBath,FullBath,HalfBath, BedroomAbvGr, KitchenAbvGr,TotalBsmtSF,TotRmsAbvGrd,Fireplaces, GarageYrBlt,GarageCars,GarageArea,WoodDeckSF, OpenPorchSF,EnclosedPorch,X3SsnPorch, ScreenPorch, PoolArea, MiscVal, MoSold, YrSold, SalePrice)
+df[is.na(df)] <- 0
+str(df)
+
+```
+
+
+
+```{r}
+set.seed(123)
+dataset_split <- initial_split(df, prop = 0.5)
+dataset_train <- training(dataset_split)
+dataset_test  <- testing(dataset_split)
+```
+
+regression tree
+```{r}
+m1 <- rpart(formula = SalePrice ~ ., data = dataset_train, method = "anova")
+rpart.plot(m1, cex=0.5)
+```
+```{r, fig.width=6, fig.height=4}
+plotcp(m1)
+```
+Assess out-of-sample predictive accuracy
+
+root mean square error = RMSE
+```{r}
+pred <- predict(m1, newdata = dataset_test)
+RMSE(pred, house$SalePrice)
+```
+bagging
+```{r}
+ctrl <- trainControl(method = "cv",  number = 10) 
+```
+```{r, warning=F}
+bagged_cv <- train(SalePrice ~ ., data = dataset_train, method = "treebag", trControl = ctrl, importance = TRUE)
+```
+```{r}
+bagged_cv
+```
+
+```{r, fig.width=6, fig.height=15}
+plot(varImp(bagged_cv), 80)
+```
+Assess out-of-sample predictive accuracy
+```{r}
+pred <- predict(bagged_cv, newdata = dataset_test)
+RMSE(pred, dataset_test$SalePrice)
+```
+Fit a random forest model
+```{r}
+rf <- randomForest(formula = SalePrice ~ ., data = dataset_train)
+```
+Plot the error rate
+```{r, fig.width=4, fig.height=3}
+plot(rf)
+
+pred_randomForest <- predict(rf, newdata = dataset_test)
+head(pred_randomForest)
+RMSE(pred_randomForest, dataset_test$SalePrice)
+```
+
+
+
+```{r}
+multiple_regression <- lm( SalePrice~ ., data = dataset_test)
+summary(multiple_regression)
+
+
+yhat_mr <- predict(multiple_regression, newdata = as.data.frame(dataset_test))
+mr_resid <- dataset_test$SalePrice 
+RMSE_mr <- sqrt(mean(multiple_regression$residuals^2))
+RMSE_mr
+```
+Multiple Regression (filtered)
+```{r}
+multiple_regression_2 <- lm( SalePrice~ zoning + lotconfig  + neighbourhood  + housestyle + overallquality + roofmaterial + basement_height + basement_exposure + basement_rating + kitchen_quality+ GrLivArea + X1stFlrSF+ TotalBsmtSF + GarageArea,data = df)
+
+
+
+summary(multiple_regression_2)
+```
+
+
+Quantile Regression: 
+construct a sequence of quantile values
+```{r}
+tau_seq <- seq(0.1, 0.9, by=0.1)
+tau_seq
+```
+
+Quantile Regression on SalePrice on all covariates
+```{r}
+
+str(fireplace)
+str(zoning)
+str(landslope)
+
+fireplace2 <- as.numeric(fireplace)
+zoning2<- as.numeric(zoning)
+landslope2 <- as.numeric(landslope)
+
+df2 = as.data.frame(sapply(df, as.numeric))
+class(df2)
+str(df2)
+summary(df2)
+
+
+#zoning + lotconfig  + neighbourhood  + housestyle + overallquality + roofmaterial + basement_height + basement_exposure + basement_rating + kitchen_quality+ GrLivArea + X1stFlrSF+ TotalBsmtSF + GarageArea
+
+quantile_regression <- rq(SalePrice ~  lotconfig + overallquality +basement_height + GrLivArea+ X1stFlrSF + TotalBsmtSF+GarageArea, data = df2, tau = tau_seq)
+summary(quantile_regression)
+plot(summary(quantile_regression))
+
+
+
+```
+
+
+
+
